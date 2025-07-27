@@ -234,9 +234,11 @@
                 </div>
                 <div class="card">
                     <div class="card-title">Spending by Category</div>
-                    <div id="segmented-bar-container" style="height: 40px; position: relative;">
-                        <canvas id="segmented-bar-chart"></canvas>
+                    <!-- START OF CHANGE: Canvas and Container for Pie Chart -->
+                    <div id="category-chart-container" style="position: relative; height: 250px;">
+                        <canvas id="category-chart"></canvas>
                     </div>
+                    <!-- END OF CHANGE -->
                 </div>
                 <div id="suggestion-container"></div>
             </div>
@@ -325,7 +327,7 @@
         // --- APP STATE ---
         let cameraStream = null;
         let sparklineChart = null;
-        let segmentedBarChart = null;
+        let categoryChart = null; // Changed from segmentedBarChart
         let chatHistory = [];
         const csrftoken = getCookie('csrftoken');
 
@@ -455,7 +457,7 @@
             .then(response => response.ok ? response.json() : response.text().then(text => { throw new Error(text) }))
             .then(data => {
                 if (data.error) throw new Error(data.error);
-                renderHomePage(); // Refresh home page with new data
+                renderHomePage();
             })
             .catch(err => handleError(err, "Failed to process receipt."))
             .finally(() => document.getElementById('processingOverlay').classList.remove('visible'));
@@ -539,40 +541,72 @@
                         suggestionContainer.innerHTML = '';
                     }
 
-                    renderSegmentedBarChart(data.category_summary);
+                    // --- CHANGE: Call renderCategoryChart (Doughnut) instead of bar chart ---
+                    renderCategoryChart(data.category_summary);
                 })
                 .catch(err => handleError(err, "Could not load tracker data."));
         }
 
-        function renderSegmentedBarChart(categoryData) {
-            const ctx = document.getElementById('segmented-bar-chart').getContext('2d');
-            if (segmentedBarChart) segmentedBarChart.destroy();
+        // --- START OF CHANGE: renderCategoryChart function now creates a doughnut chart ---
+        function renderCategoryChart(categoryData) {
+            const container = document.getElementById('category-chart-container');
+            const ctx = document.getElementById('category-chart').getContext('2d');
+            if (categoryChart) categoryChart.destroy();
+
             const labels = Object.keys(categoryData);
             const dataValues = Object.values(categoryData);
             const total = dataValues.reduce((sum, val) => sum + parseFloat(val), 0);
+
             if(total === 0) {
-                const container = document.getElementById('segmented-bar-container');
                 container.innerHTML = `<div class="empty-state" style="padding:0;"><p>No spending data for this month.</p></div>`;
+                // Must re-add canvas if we want to draw on it later
+                const canvas = document.createElement('canvas');
+                canvas.id = 'category-chart';
+                container.appendChild(canvas);
                 return;
             };
-            const percentages = dataValues.map(val => (parseFloat(val) / total) * 100);
-            segmentedBarChart = new Chart(ctx, {
-                type: 'bar',
+
+            categoryChart = new Chart(ctx, {
+                type: 'doughnut',
                 data: {
-                    labels: ['Spending'],
-                    datasets: labels.map((label, i) => ({
-                        label: label,
-                        data: [percentages[i]],
-                        backgroundColor: ['#1A237E', '#FF8A80', '#FDD835', '#00F5D4', '#9C27B0'][i % 5]
-                    }))
+                    labels: labels,
+                    datasets: [{
+                        label: 'Spending',
+                        data: dataValues,
+                        backgroundColor: ['#1A237E', '#FF8A80', '#FDD835', '#00F5D4', '#9C27B0'],
+                        borderWidth: 0,
+                    }]
                 },
                 options: {
-                    indexAxis: 'y', responsive: true, maintainAspectRatio: false,
-                    plugins: { legend: { position: 'bottom', labels: { boxWidth: 12, padding: 20 } }, tooltip: { callbacks: { label: (c) => `${c.dataset.label}: ${c.raw.toFixed(1)}%` } } },
-                    scales: { x: { display: false, stacked: true }, y: { display: false, stacked: true } }
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    cutout: '70%',
+                    plugins: {
+                        legend: {
+                            position: 'bottom',
+                            labels: {
+                                boxWidth: 12,
+                                padding: 20,
+                                font: { family: "'Inter', sans-serif" }
+                            }
+                        },
+                        tooltip: {
+                            callbacks: {
+                                label: function(context) {
+                                    let label = context.label || '';
+                                    if (label) { label += ': '; }
+                                    if (context.parsed !== null) {
+                                        label += new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR' }).format(context.parsed);
+                                    }
+                                    return label;
+                                }
+                            }
+                        }
+                    }
                 }
             });
         }
+        // --- END OF CHANGE ---
 
         function generateAndRenderReport(startDate, endDate) {
             const reportContainer = document.getElementById('reportContainer');
